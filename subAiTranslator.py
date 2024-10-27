@@ -14,12 +14,10 @@ def setup_logging():
         ]
     )
 
-def translate_with_openai(chunk):
+def translate_with_openai(chunk, client):
     """
-    Translates a chunk of subtitles using OpenAI's API.
+    Translates a chunk of subtitles using OpenAI's GPT-4 API.
     """
-    openai.api_key = os.getenv("OPENAI_API_KEY")
-    
     # Prepare the input text for the API
     chunk_text = "\n".join([f"{number}: {text}" for _, text, number in chunk])
     prompt = (
@@ -29,17 +27,17 @@ def translate_with_openai(chunk):
         f"{chunk_text}"
     )
     
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are a helpful and creative Persian translator."},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=2000,
+        max_tokens=3000,
         temperature=0.7,
     )
     
-    translated_text = response['choices'][0]['message']['content']
+    translated_text = response.choices[0].message['content']
     
     # Split the translated text back into individual lines corresponding to the chunk
     translated_lines = translated_text.split("\n")
@@ -55,19 +53,22 @@ def merge_subtitles_with_translation(english_file, output_file):
     setup_logging()
     logging.info(f"Starting contextual translation for: {english_file}")
 
+    # Instantiate the OpenAI client
+    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
     try:
         with open(english_file, 'r', encoding='utf-8') as eng_file:
             english_lines = eng_file.readlines()
             
             english_dialogues = extract_dialogues(english_lines)
             
-            chunk_size = 50  # A manageable chunk size for API processing
+            chunk_size = 10  # A manageable chunk size for API processing
             translated_dialogues = []
 
             # Process the file in chunks
             for i in range(0, len(english_dialogues), chunk_size):
                 chunk = english_dialogues[i:i + chunk_size]
-                translated_chunk = translate_with_openai(chunk)
+                translated_chunk = translate_with_openai(chunk, client)
                 translated_dialogues.extend(translated_chunk)
             
             # Open the output file to write merged subtitles
