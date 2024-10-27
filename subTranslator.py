@@ -19,31 +19,33 @@ def translate_subtitle(input_file, output_file, target_language="fa"):
     logging.info(f"Starting translation for file: {input_file}")
     
     try:
-        with open(input_file, 'r', encoding='utf-8') as infile, open(output_file, 'w', encoding='utf-8') as outfile:
+        with open(input_file, 'r', encoding='utf-8') as infile:
             lines = infile.readlines()
             line_count = len(lines)
 
-            for idx, line in enumerate(lines):
-                # Log the progress every 10 lines
-                if idx % 10 == 0:
-                    logging.info(f"Translating line {idx + 1}/{line_count}")
-                
-                # Check if the line is a timecode line
-                if re.match(r"(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})", line):
-                    outfile.write(line)
-                elif line.strip().isdigit() or line.strip() == "":
-                    # Keep line numbers and empty lines unchanged
-                    outfile.write(line)
-                else:
-                    try:
-                        # Translate subtitle text
-                        translated_text = translator.translate(line.strip(), dest=target_language).text
-                        outfile.write(translated_text + "\n")
-                    except Exception as e:
-                        logging.error(f"Error translating line {idx + 1}: {line.strip()}")
-                        logging.error(f"Exception: {e}")
-                        # Write the original line if translation fails to avoid losing information
+            # Open the output file in append mode ('a')
+            with open(output_file, 'a', encoding='utf-8') as outfile:
+                for idx, line in enumerate(lines):
+                    # Log the progress every 10 lines
+                    if idx % 10 == 0:
+                        logging.info(f"Translating line {idx + 1}/{line_count}")
+                    
+                    # Check if the line is a timecode line
+                    if re.match(r"(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})", line):
                         outfile.write(line)
+                    elif line.strip().isdigit() or line.strip() == "":
+                        # Keep line numbers and empty lines unchanged
+                        outfile.write(line)
+                    else:
+                        try:
+                            # Translate subtitle text
+                            translated_text = translator.translate(line.strip(), dest=target_language).text
+                            outfile.write(translated_text + "\n")
+                        except Exception as e:
+                            logging.error(f"Error translating line {idx + 1}: {line.strip()}")
+                            logging.error(f"Exception: {e}")
+                            # Write the original line if translation fails to avoid losing information
+                            outfile.write(line)
         
         logging.info(f"Translation complete. Translated file saved as: {output_file}")
 
