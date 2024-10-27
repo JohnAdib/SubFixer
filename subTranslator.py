@@ -4,13 +4,12 @@ import logging
 from googletrans import Translator
 
 def setup_logging():
-    # Set up the logging configuration
+    # Set up the logging configuration to log only to the console
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler("translation.log"),  # Log to a file
-            logging.StreamHandler()  # Log to the console
+            logging.StreamHandler()  # Log only to the console
         ]
     )
 
@@ -20,11 +19,10 @@ def translate_subtitle(input_file, output_file, target_language="fa"):
     logging.info(f"Starting translation for file: {input_file}")
     
     try:
-        with open(input_file, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-        
-        line_count = len(lines)
-        with open(output_file, 'w', encoding='utf-8') as outfile:
+        with open(input_file, 'r', encoding='utf-8') as infile, open(output_file, 'w', encoding='utf-8') as outfile:
+            lines = infile.readlines()
+            line_count = len(lines)
+
             for idx, line in enumerate(lines):
                 # Log the progress every 10 lines
                 if idx % 10 == 0:
@@ -44,12 +42,15 @@ def translate_subtitle(input_file, output_file, target_language="fa"):
                     except Exception as e:
                         logging.error(f"Error translating line {idx + 1}: {line.strip()}")
                         logging.error(f"Exception: {e}")
-                        outfile.write(line)  # Add the original line if translation fails
+                        # Write the original line if translation fails to avoid losing information
+                        outfile.write(line)
         
         logging.info(f"Translation complete. Translated file saved as: {output_file}")
 
+    except FileNotFoundError as fnf_error:
+        logging.error(f"File not found: {input_file}. Please check the file path.")
     except Exception as e:
-        logging.error(f"An error occurred while processing the file: {e}")
+        logging.error(f"An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
