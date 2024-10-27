@@ -25,6 +25,11 @@ python3 subShifter.py input.srt output.srt 00:03:40
 
 python3 subTranslator.py en.srt fa.srt
 
+python3 SubMerger.py en.srt output.srt merged_movie.srt
+
+python3 subAiTranslator.py en.srt ai_translated_fa.srt
+
+
 ```
 
 ## **Usage**
