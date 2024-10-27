@@ -1,12 +1,14 @@
-import openai
 import os
 import re
 import argparse
+from openai import OpenAI
 
-# Set your OpenAI API key from the environment variable
-openai.api_key = os.getenv('OPENAI_API_KEY')
+# Initialize the OpenAI client with the API key from the environment variable
+client = OpenAI(
+    api_key=os.environ.get("OPENAI_API_KEY"),
+)
 
-if not openai.api_key:
+if not client.api_key:
     raise ValueError("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
 
 def read_srt_file(file_path):
@@ -47,15 +49,15 @@ def translate_subtitles(subtitles, target_language="Persian", chunk_size=5):
 
         # Call the OpenAI API
         try:
-            response = openai.chat.completions.create(
-                model="gpt-4",
+            response = client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
+                model="gpt-4o-mini",
                 max_tokens=2000,
                 temperature=0.7,
             )
 
             # Extract the translated text
-            translated_text = response.choices[0].message['content'].strip()
+            translated_text = response.choices[0]['message']['content'].strip()
 
             # Split translated_text into lines and match them to the original subtitles
             translated_lines = translated_text.split('\n')
