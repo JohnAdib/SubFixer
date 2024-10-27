@@ -1,123 +1,97 @@
-import re
-import sys
-import logging
 import openai
 import os
-import time
+import re
+import argparse
 
-def setup_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler()  # Log only to the console
-        ]
-    )
+# Set your OpenAI API key from the environment variable
+openai.api_key = os.getenv('OPENAI_API_KEY')
 
-def translate_with_openai(chunk, client, max_retries=5):
-    chunk_text = "\n".join([f"{number}: {text}" for _, text, number in chunk])
-    prompt = (
-        "Translate the following English subtitle lines into informal, natural Persian suitable for a Persian-speaking audience. "
-        "Keep the tone conversational and human-like:\n\n"
-        f"{chunk_text}"
-    )
+if not openai.api_key:
+    raise ValueError("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+
+def read_srt_file(file_path):
+    """
+    Reads an SRT file and returns a list of subtitle entries.
+    Each entry contains the timestamp and the text.
+    """
+    with open(file_path, 'r', encoding='utf-8') as file:
+        content = file.read()
+
+    # Split the content into individual subtitle blocks
+    entries = re.split(r'\n\n', content.strip())
+    subtitles = []
+
+    for entry in entries:
+        lines = entry.splitlines()
+        if len(lines) >= 3:
+            index = lines[0].strip()
+            timestamp = lines[1].strip()
+            text = ' '.join(line.strip() for line in lines[2:])
+            subtitles.append((index, timestamp, text))
     
-    retries = 0
-    while retries < max_retries:
-        try:
-            response = client.completions.create(
-                model="text-davinci-003",
-                prompt=prompt,
-                max_tokens=3000,
-                temperature=0.7,
-                n=1,
-                stop=None
-            )
-            return response.choices[0].text.strip().split("\n")
-        except openai.error.RateLimitError as e:
-            wait_time = 2 ** retries
-            logging.warning(f"Rate limit reached. Retrying in {wait_time} seconds...")
-            time.sleep(wait_time)
-            retries += 1
-        except openai.error.APIError as e:
-            logging.error(f"API Error: {e}")
-            break
-        except Exception as e:
-            logging.error(f"An unexpected error occurred: {e}")
-            break
-    logging.error("Max retries exceeded. Failed to translate chunk.")
-    return []
+    return subtitles
 
-def merge_subtitles_with_translation(english_file, output_file):
-    setup_logging()
-    logging.info(f"Starting contextual translation for: {english_file}")
-
-    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-    try:
-        with open(english_file, 'r', encoding='utf-8') as eng_file:
-            english_lines = eng_file.readlines()
-            
-            english_dialogues = extract_dialogues(english_lines)
-            
-            chunk_size = 50
-            translated_dialogues = []
-
-            for i in range(0, len(english_dialogues), chunk_size):
-                chunk = english_dialogues[i:i + chunk_size]
-                translated_chunk = translate_with_openai(chunk, client)
-                if translated_chunk:
-                    translated_dialogues.extend(
-                        [(chunk[j][0], translated_chunk[j].strip(), chunk[j][2]) for j in range(len(chunk))]
-                    )
-                else:
-                    logging.error(f"Failed to translate chunk {i // chunk_size + 1}")
-            
-            with open(output_file, 'w', encoding='utf-8') as outfile:
-                for timing, text, number in translated_dialogues:
-                    outfile.write(f"{number}\n")
-                    outfile.write(f"{timing}\n")
-                    outfile.write(f"{text}\n\n")
+def translate_subtitles(subtitles, target_language="Persian", chunk_size=5):
+    """
+    Translates subtitles using OpenAI API in chunks to minimize API calls.
+    Returns a list of translated subtitles.
+    """
+    translated_subtitles = []
+    for i in range(0, len(subtitles), chunk_size):
+        # Collect a chunk of subtitles
+        chunk = subtitles[i:i + chunk_size]
+        chunk_text = "\n".join([f"{idx}: {text}" for idx, _, text in chunk])
         
-        logging.info(f"Subtitle translation complete. Output file saved as: {output_file}")
+        # Create the prompt for the API
+        prompt = f"Translate the following movie subtitles to {target_language} in a human-readable way, understanding the movie context:\n{chunk_text}\n"
 
-    except FileNotFoundError:
-        logging.error(f"File not found. Please check the file path: {english_file}")
-    except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
+        # Call the OpenAI API
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=2000,
+                temperature=0.7,
+            )
 
-def extract_dialogues(lines):
-    dialogues = []
-    number = None
-    timing = None
-    text = []
+            # Extract the translated text
+            translated_text = response.choices[0].message['content'].strip()
+
+            # Split translated_text into lines and match them to the original subtitles
+            translated_lines = translated_text.split('\n')
+            for j, line in enumerate(translated_lines):
+                translated_subtitles.append((subtitles[i + j][0], subtitles[i + j][1], line))
+
+        except Exception as e:
+            print(f"Error occurred during translation: {e}")
+            break
     
-    for line in lines:
-        line = line.strip()
-        if line.isdigit():
-            number = line
-        elif re.match(r"(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})", line):
-            timing = line
-        elif line:
-            text.append(line)
-        else:
-            if number and timing and text:
-                dialogues.append((timing, ' '.join(text), number))
-                number = None
-                timing = None
-                text = []
-    
-    if number and timing and text:
-        dialogues.append((timing, ' '.join(text), number))
-    
-    return dialogues
+    return translated_subtitles
+
+def save_translated_subtitles(file_path, translated_subtitles):
+    """
+    Saves the translated subtitles to a new SRT file.
+    """
+    with open(file_path, 'w', encoding='utf-8') as file:
+        for idx, timestamp, text in translated_subtitles:
+            file.write(f"{idx}\n{timestamp}\n{text}\n\n")
+
+def main():
+    # Set up argument parser for CLI usage
+    parser = argparse.ArgumentParser(description="Translate movie subtitles to Persian.")
+    parser.add_argument('input_file', type=str, help='Path to the input SRT file')
+    parser.add_argument('output_file', type=str, help='Path to save the translated SRT file')
+    args = parser.parse_args()
+
+    # Read the original subtitles
+    subtitles = read_srt_file(args.input_file)
+
+    # Translate the subtitles
+    translated_subtitles = translate_subtitles(subtitles)
+
+    # Save the translated subtitles to a new file
+    save_translated_subtitles(args.output_file, translated_subtitles)
+    print(f"Translated subtitles saved to {args.output_file}")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python merge_subtitles_with_translation.py <english_file> <output_file>")
-        sys.exit(1)
-
-    english_file = sys.argv[1]
-    output_file = sys.argv[2]
-
-    merge_subtitles_with_translation(english_file, output_file)
+    main()
