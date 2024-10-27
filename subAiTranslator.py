@@ -16,7 +16,7 @@ def setup_logging():
 
 def translate_with_openai(chunk):
     """
-    Translates a chunk of subtitles using OpenAI's GPT-4 API.
+    Translates a chunk of subtitles using OpenAI's API.
     """
     openai.api_key = os.getenv("OPENAI_API_KEY")
     
@@ -30,15 +30,16 @@ def translate_with_openai(chunk):
     )
     
     response = openai.ChatCompletion.create(
-        model="gpt-4",
+        model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "You are a helpful and creative Persian translator."},
             {"role": "user", "content": prompt}
         ],
+        max_tokens=2000,
         temperature=0.7,
     )
     
-    translated_text = response.choices[0].message['content']
+    translated_text = response['choices'][0]['message']['content']
     
     # Split the translated text back into individual lines corresponding to the chunk
     translated_lines = translated_text.split("\n")
