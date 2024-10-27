@@ -3,9 +3,9 @@ import sys
 import logging
 import openai
 import os
+import time
 
 def setup_logging():
-    # Set up the logging configuration to log only to the console
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
@@ -14,46 +14,44 @@ def setup_logging():
         ]
     )
 
-def translate_with_openai(chunk, client):
-    """
-    Translates a chunk of subtitles using OpenAI's GPT-4 API.
-    """
-    # Prepare the input text for the API
+def translate_with_openai(chunk, client, max_retries=5):
     chunk_text = "\n".join([f"{number}: {text}" for _, text, number in chunk])
     prompt = (
-        "You are a Persian translator. Translate the following subtitle lines into informal, "
-        "natural Persian that is suitable for a Persian-speaking audience. "
-        "Keep the formatting intact, but make sure the tone feels conversational and human-like:\n\n"
+        "Translate the following English subtitle lines into informal, natural Persian suitable for a Persian-speaking audience. "
+        "Keep the tone conversational and human-like:\n\n"
         f"{chunk_text}"
     )
     
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a helpful and creative Persian translator."},
-            {"role": "user", "content": prompt}
-        ],
-        max_tokens=3000,
-        temperature=0.7,
-    )
-    
-    translated_text = response.choices[0].message['content']
-    
-    # Split the translated text back into individual lines corresponding to the chunk
-    translated_lines = translated_text.split("\n")
-    translations = []
-    for i, line in enumerate(translated_lines):
-        if i < len(chunk):
-            timing, _, number = chunk[i]
-            translations.append((timing, line.strip(), number))
-    
-    return translations
+    retries = 0
+    while retries < max_retries:
+        try:
+            response = client.completions.create(
+                model="text-davinci-003",
+                prompt=prompt,
+                max_tokens=3000,
+                temperature=0.7,
+                n=1,
+                stop=None
+            )
+            return response.choices[0].text.strip().split("\n")
+        except openai.error.RateLimitError as e:
+            wait_time = 2 ** retries
+            logging.warning(f"Rate limit reached. Retrying in {wait_time} seconds...")
+            time.sleep(wait_time)
+            retries += 1
+        except openai.error.APIError as e:
+            logging.error(f"API Error: {e}")
+            break
+        except Exception as e:
+            logging.error(f"An unexpected error occurred: {e}")
+            break
+    logging.error("Max retries exceeded. Failed to translate chunk.")
+    return []
 
 def merge_subtitles_with_translation(english_file, output_file):
     setup_logging()
     logging.info(f"Starting contextual translation for: {english_file}")
 
-    # Instantiate the OpenAI client
     client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     try:
@@ -62,16 +60,19 @@ def merge_subtitles_with_translation(english_file, output_file):
             
             english_dialogues = extract_dialogues(english_lines)
             
-            chunk_size = 10  # A manageable chunk size for API processing
+            chunk_size = 50
             translated_dialogues = []
 
-            # Process the file in chunks
             for i in range(0, len(english_dialogues), chunk_size):
                 chunk = english_dialogues[i:i + chunk_size]
                 translated_chunk = translate_with_openai(chunk, client)
-                translated_dialogues.extend(translated_chunk)
+                if translated_chunk:
+                    translated_dialogues.extend(
+                        [(chunk[j][0], translated_chunk[j].strip(), chunk[j][2]) for j in range(len(chunk))]
+                    )
+                else:
+                    logging.error(f"Failed to translate chunk {i // chunk_size + 1}")
             
-            # Open the output file to write merged subtitles
             with open(output_file, 'w', encoding='utf-8') as outfile:
                 for timing, text, number in translated_dialogues:
                     outfile.write(f"{number}\n")
@@ -86,10 +87,6 @@ def merge_subtitles_with_translation(english_file, output_file):
         logging.error(f"An unexpected error occurred: {e}")
 
 def extract_dialogues(lines):
-    """
-    Extracts dialogues with their corresponding numbers and timings.
-    Returns a list of tuples (timing, text, number).
-    """
     dialogues = []
     number = None
     timing = None
@@ -110,7 +107,6 @@ def extract_dialogues(lines):
                 timing = None
                 text = []
     
-    # Handle the last block in the file if there's no trailing newline
     if number and timing and text:
         dialogues.append((timing, ' '.join(text), number))
     
