@@ -21,7 +21,7 @@ Then, navigate to the directory and install the requirements:
 ```bash
 cd SubFixer
 pip install -r requirements.txt
-python subfixer.py input.srt output.srt 00:03:40
+python3 subfixer.py input.srt output.srt 00:03:40
 ```
 
 ## **Usage**
